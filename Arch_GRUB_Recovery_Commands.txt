@@ -1,0 +1,468 @@
+# Arch Linux “No Bootable Device” — Command Reference
+
+A simple command-by-command reference for recovering a UEFI/GRUB boot problem.
+
+> IMPORTANT: These commands are intended for an Arch Linux system that is already booted into Arch (or a properly prepared recovery environment). Do not run disk-formatting or partitioning commands unless you know exactly what you are doing.
+
+---
+
+## 1. Check whether the system is booted in UEFI mode
+
+```bash
+test -d /sys/firmware/efi && echo "UEFI mode" || echo "Legacy mode"
+```
+
+### What it does
+
+Checks whether Linux was started using UEFI firmware.
+
+### Expected result
+
+```text
+UEFI mode
+```
+
+If it says `Legacy mode`, do not blindly continue with UEFI bootloader commands.
+
+---
+
+## 2. Check the disks and partitions
+
+```bash
+lsblk -f
+```
+
+### What it does
+
+Displays disks, partitions, filesystems, UUIDs, and mount points.
+
+### What to look for
+
+A typical Arch UEFI installation might contain:
+
+```text
+nvme0n1
+├─nvme0n1p1   vfat   FAT32   /boot
+├─nvme0n1p2   ext4           /
+└─nvme0n1p3   ext4           /home
+```
+
+The exact partition numbers will vary between computers.
+
+### Important
+
+This command is read-only. It does not modify the disk.
+
+---
+
+## 3. Check the UEFI boot entries
+
+```bash
+sudo efibootmgr -v
+```
+
+### What it does
+
+Shows the boot entries stored in the computer's UEFI firmware.
+
+### Example
+
+```text
+BootCurrent: 0000
+BootOrder: 0000,2001,2002
+Boot0000* GRUB
+```
+
+### Why it matters
+
+If the GRUB files still exist but the `GRUB` entry is missing, the firmware may no longer know which EFI program to launch.
+
+This command is read-only.
+
+---
+
+## 4. Check where GRUB EFI files are located
+
+```bash
+sudo find /boot -maxdepth 3 -type f \( -name 'grub*.efi' -o -name 'bootx64.efi' \) -print
+```
+
+### What it does
+
+Searches `/boot` for common GRUB EFI executables and the standard UEFI fallback loader.
+
+### Example output
+
+```text
+/boot/grub/x86_64-efi/grub.efi
+/boot/EFI/GRUB/grubx64.efi
+```
+
+This is read-only.
+
+---
+
+## 5. Check whether an EFI file is actually an EFI executable
+
+```bash
+file /boot/EFI/GRUB/grubx64.efi
+```
+
+### What it does
+
+Identifies the type of the file.
+
+A valid GRUB EFI executable commonly reports something similar to:
+
+```text
+PE32+ executable for EFI (application), x86-64
+```
+
+The exact output can differ depending on the GRUB build.
+
+---
+
+## 6. Check whether the fallback loader already exists
+
+```bash
+sudo ls -lah /boot/EFI/Boot/
+```
+
+### What it does
+
+Checks the standard UEFI fallback directory.
+
+You are looking for:
+
+```text
+bootx64.efi
+```
+
+If the directory does not exist, that does not automatically mean the installation is broken.
+
+---
+
+# Creating the UEFI Fallback Loader
+
+The following commands are the main fix documented in this recovery procedure.
+
+The goal is to create:
+
+```text
+/boot/EFI/Boot/bootx64.efi
+```
+
+This is a standard UEFI fallback location.
+
+---
+
+## 7. Create the fallback directory
+
+```bash
+sudo mkdir -p /boot/EFI/Boot
+```
+
+### What it does
+
+Creates the `EFI/Boot` directory if it does not already exist.
+
+`-p` means it will not complain if the directory already exists.
+
+This does not format or repartition anything.
+
+---
+
+## 8. Copy an existing GRUB EFI executable to the fallback location
+
+For a system where this file exists:
+
+```bash
+sudo cp /boot/EFI/GRUB/grubx64.efi /boot/EFI/Boot/bootx64.efi
+```
+
+### What it does
+
+Copies the existing GRUB EFI executable to the standard UEFI fallback filename:
+
+```text
+bootx64.efi
+```
+
+The original file is not deleted.
+
+### Important
+
+Do not blindly use this exact source path on every computer.
+
+First check:
+
+```bash
+sudo find /boot -maxdepth 3 -type f \( -name 'grub*.efi' -o -name 'bootx64.efi' \) -print
+```
+
+Use an existing, verified GRUB EFI executable from your installation.
+
+---
+
+## 9. Verify the fallback loader
+
+```bash
+sudo ls -lah /boot/EFI/Boot/
+```
+
+### Expected result
+
+Something similar to:
+
+```text
+bootx64.efi
+```
+
+You can also verify its type:
+
+```bash
+file /boot/EFI/Boot/bootx64.efi
+```
+
+---
+
+# Regenerating GRUB Configuration
+
+## 10. Regenerate `grub.cfg`
+
+```bash
+sudo grub-mkconfig -o /boot/grub/grub.cfg
+```
+
+### What it does
+
+Regenerates GRUB's menu configuration based on the installed kernels and available configuration.
+
+Typical output includes:
+
+```text
+Found linux image: /boot/vmlinuz-linux
+Found initrd image: /boot/initramfs-linux.img
+done
+```
+
+### What it does NOT do
+
+It does not:
+
+- format your disk
+- reinstall Arch
+- delete your partitions
+
+---
+
+## 11. Verify the GRUB configuration
+
+```bash
+ls -lh /boot/grub/grub.cfg
+```
+
+### What it does
+
+Confirms that the GRUB configuration file exists.
+
+---
+
+# Useful Diagnostic Sequence
+
+If someone gets:
+
+> No bootable device found
+
+and can still boot Arch through another method, these are the commands I would run first:
+
+### Step 1
+
+```bash
+test -d /sys/firmware/efi && echo "UEFI mode" || echo "Legacy mode"
+```
+
+### Step 2
+
+```bash
+lsblk -f
+```
+
+### Step 3
+
+```bash
+sudo efibootmgr -v
+```
+
+### Step 4
+
+```bash
+sudo find /boot -maxdepth 3 -type f \( -name 'grub*.efi' -o -name 'bootx64.efi' \) -print
+```
+
+### Step 5
+
+```bash
+sudo ls -lah /boot/EFI/Boot/
+```
+
+These commands are primarily diagnostic and do not modify the system.
+
+---
+
+# Typical Repair Sequence
+
+If:
+
+- the system is booted in UEFI mode,
+- `/boot` is the EFI System Partition,
+- an existing GRUB EFI executable has been found,
+- and `/boot/EFI/Boot/bootx64.efi` does not exist,
+
+the repair sequence used in this case is:
+
+```bash
+sudo mkdir -p /boot/EFI/Boot
+```
+
+```bash
+sudo cp /boot/EFI/GRUB/grubx64.efi /boot/EFI/Boot/bootx64.efi
+```
+
+```bash
+sudo grub-mkconfig -o /boot/grub/grub.cfg
+```
+
+Then verify:
+
+```bash
+sudo efibootmgr -v
+```
+
+and:
+
+```bash
+sudo ls -lah /boot/EFI/Boot/
+```
+
+---
+
+# Secure Boot
+
+If the firmware displays:
+
+```text
+Prohibited by Secure Boot policy
+```
+
+the firmware is rejecting the selected EFI executable under its Secure Boot policy.
+
+Do not assume that copying an EFI file will make it Secure Boot compatible.
+
+For troubleshooting, Secure Boot may be temporarily disabled if appropriate, but a permanent Secure Boot setup requires a properly signed boot chain.
+
+---
+
+# Reboot
+
+After verifying the configuration:
+
+```bash
+sudo reboot
+```
+
+If the system boots normally, the recovery is complete.
+
+---
+
+# If It Still Says “No Bootable Device”
+
+Do not immediately reinstall Arch.
+
+Collect these outputs:
+
+```bash
+lsblk -f
+```
+
+```bash
+sudo efibootmgr -v
+```
+
+```bash
+test -d /sys/firmware/efi && echo "UEFI mode" || echo "Legacy mode"
+```
+
+```bash
+sudo find /boot -maxdepth 3 -type f \( -name 'grub*.efi' -o -name 'bootx64.efi' \) -print
+```
+
+```bash
+sudo ls -lah /boot/EFI/
+```
+
+Then use those results to determine whether the issue is:
+
+- missing UEFI NVRAM entry,
+- missing/incorrect EFI file,
+- incorrect EFI System Partition,
+- GRUB configuration problem,
+- Secure Boot rejection,
+- or a separate firmware/hardware issue.
+
+---
+
+# Important Warning About Disk Commands
+
+Commands such as these can modify or destroy data:
+
+```bash
+fdisk
+parted
+mkfs
+dd
+wipefs
+```
+
+Do not use them as part of a normal GRUB recovery unless you have specifically diagnosed a partition/filesystem problem and understand exactly what the command will do.
+
+A missing UEFI boot entry does **not** by itself mean the disk needs to be formatted or repartitioned.
+
+---
+
+# Quick Reference
+
+| Command | Purpose | Modifies system? |
+|---|---|---|
+| `lsblk -f` | Show disks/partitions | No |
+| `efibootmgr -v` | Show UEFI boot entries | No |
+| `test -d /sys/firmware/efi ...` | Check UEFI mode | No |
+| `find /boot ...` | Find EFI files | No |
+| `file <EFI-file>` | Identify EFI executable | No |
+| `ls -lah /boot/EFI/Boot/` | Check fallback loader | No |
+| `mkdir -p /boot/EFI/Boot` | Create fallback directory | Yes, filesystem only |
+| `cp ... bootx64.efi` | Create fallback EFI loader | Yes, copies a file |
+| `grub-mkconfig ...` | Regenerate GRUB menu | Yes, writes `grub.cfg` |
+| `reboot` | Restart computer | No persistent configuration change |
+
+---
+
+## Main idea
+
+The important distinction is:
+
+```text
+EFI files on the SSD
+        ≠
+UEFI boot entries stored in firmware
+```
+
+A computer can still have perfectly good GRUB files on its EFI partition while the firmware has lost the `GRUB` boot entry.
+
+Adding the standard fallback:
+
+```text
+/boot/EFI/Boot/bootx64.efi
+```
+
+provides another way for UEFI firmware to locate a bootloader.
