@@ -32,10 +32,7 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-echo "=============================================="
 echo " Arch Linux UEFI/GRUB Fallback Recovery"
-echo "=============================================="
-echo
 
 # 1. Verify UEFI mode
 if [[ ! -d /sys/firmware/efi ]]; then
@@ -186,9 +183,7 @@ else
 fi
 
 echo
-echo "=============================================="
 echo " Recovery preparation completed"
-echo "=============================================="
 echo
 echo "Fallback loader:"
 echo "  $FALLBACK_FILE"
